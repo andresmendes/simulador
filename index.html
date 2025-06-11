@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integração Numérica de Sistemas de EDOs</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.1/math.js"></script>
+    
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+    <script>
+        MathJax = {
+          tex: {
+            inlineMath: [['$', '$'], ['\\(', '\\)']]
+          },
+          svg: {
+            fontCache: 'global'
+          }
+        };
+    </script>
+    <script type="text/javascript" id="MathJax-script" async
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js">
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* gray-900 */
+            color: #f3f4f6; /* gray-100 */
+        }
+        /* Custom styles for better input appearance in dark mode */
+        input[type="number"], input[type="text"], textarea, select {
+            background-color: #374151; /* gray-700 */
+            border: 1px solid #4b5563; /* gray-600 */
+            color: white;
+            border-radius: 0.375rem; /* rounded-md */
+            padding: 0.5rem 0.75rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input[type="number"]:focus, input[type="text"]:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #3b82f6; /* blue-500 */
+            box-shadow: 0 0 0 2px #1e40af; /* blue-500 focus ring */
+        }
+         select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+        }
+        .plot-container .plotly .gridlayer .grid .zeroline {
+            stroke: rgba(255, 255, 255, 0.5) !important;
+        }
+        .mjx-chtml { vertical-align: middle; }
+        .table-input { padding: 0.25rem 0.5rem; }
+    </style>
+     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+</head>
+<body class="p-2">
+
+    <div class="max-w-screen-xl mx-auto">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-white">Simulador de Sistemas Dinâmicos</h1>
+            <p class="text-gray-400 mt-2">Modele seu sistema com equações de estado de 1ª ordem.</p>
+        </header>
+
+        <div class="grid grid-cols-1 gap-4">
+
+            <div class="bg-gray-800 p-4 rounded-lg shadow-lg flex flex-col gap-4">
+                
+                <div>
+                    <h3 class="text-lg font-semibold border-b border-gray-600 pb-2 mb-3">1. Variáveis de Estado</h3>
+                    <input type="text" id="state-variables-input" value="theta, omega" class="w-full" placeholder="Ex: x, v, theta">
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-semibold border-b border-gray-600 pb-2 mb-3">2. Entradas do Sistema</h3>
+                    <input type="text" id="inputs-list-input" value="F_drive" class="w-full" placeholder="Ex: u, F_ext, T">
+                    <div id="inputs-container" class="mt-3 flex flex-col gap-4">
+                        </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-semibold border-b border-gray-600 pb-2 mb-3">3. Equações de Estado</h3>
+                    <div id="equations-container" class="mt-2 flex flex-col gap-3">
+                        </div>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-semibold border-b border-gray-600 pb-2 mb-3">4. Parâmetros</h3>
+                    <div id="params-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        </div>
+                </div>
+
+                <div>
+                     <h3 class="text-lg font-semibold border-b border-gray-600 pb-2 mb-3">5. Condições Iniciais</h3>
+                     <div id="initial-conditions-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                         </div>
+                </div>
+                
+                <div>
+                     <h3 class="text-lg font-semibold border-b border-gray-600 pb-2 mb-3">6. Simulação</h3>
+                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                         <div>
+                             <label for="sim-time" class="block text-sm font-medium text-gray-300">Tempo de Simulação (s)</label>
+                             <input type="number" id="sim-time" value="100" class="w-full mt-1">
+                         </div>
+                         <div>
+                             <label for="time-step" class="block text-sm font-medium text-gray-300">Passo de integração (dt)</label>
+                             <input type="number" id="time-step" value="0.01" step="0.001" class="w-full mt-1">
+                         </div>
+                     </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-4 mt-4 border-t border-gray-700 pt-4">
+                    <button id="simulate-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg text-lg transition-transform transform hover:scale-[1.01]">
+                        Simular
+                    </button>
+                    <button id="export-csv-button" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg text-lg transition-transform transform hover:scale-[1.01] hidden">
+                        Exportar para CSV
+                    </button>
+                </div>
+
+            </div>
+
+            <div id="plots-column" class="bg-gray-800 mt-4 p-4 rounded-lg shadow-lg plot-container">
+                 <div class="text-center text-gray-400">Clique em "Simular" para gerar os gráficos.</div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- escopo global e constantes ---
+        let simulationData = null; // Armazena os resultados da última simulação
+
+        const dom = {
+            stateVarsInput: document.getElementById('state-variables-input'),
+            inputsListInput: document.getElementById('inputs-list-input'),
+            equationsContainer: document.getElementById('equations-container'),
+            paramsContainer: document.getElementById('params-container'),
+            initialConditionsContainer: document.getElementById('initial-conditions-container'),
+            inputsContainer: document.getElementById('inputs-container'),
+            simulateButton: document.getElementById('simulate-button'),
+            exportButton: document.getElementById('export-csv-button'),
+            plotsColumn: document.getElementById('plots-column'),
+            simTimeInput: document.getElementById('sim-time'),
+            timeStepInput: document.getElementById('time-step'),
+        };
+
+        const defaultEquations = {
+            'theta': 'omega',
+            'omega': 'F_drive - (g / L) * sin(theta) - b * omega'
+        };
+        
+        const greekLetters = {
+            'alpha': '\\alpha', 'beta': '\\beta', 'gamma': '\\gamma', 'delta': '\\delta',
+            'epsilon': '\\epsilon', 'zeta': '\\zeta', 'eta': '\\eta', 'theta': '\\theta',
+            'iota': '\\iota', 'kappa': '\\kappa', 'lambda': '\\lambda', 'mu': '\\mu',
+            'nu': '\\nu', 'xi': '\\xi', 'omicron': 'o', 'pi': '\\pi',
+            'rho': '\\rho', 'sigma': '\\sigma', 'tau': '\\tau', 'upsilon': '\\upsilon',
+            'phi': '\\phi', 'chi': '\\chi', 'psi': '\\psi', 'omega': '\\omega'
+        };
+
+        // --- Funções de atualização da UI ---
+
+        function rebuildFullUI() {
+            rebuildEquationsAndICsUI();
+            rebuildInputsUI();
+            parseParametersFromEquations();
+        }
+
+        function toLatex(varName) {
+            return greekLetters[varName.toLowerCase()] || varName;
+        }
+
+        function rebuildEquationsAndICsUI() {
+            const stateVars = dom.stateVarsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+            dom.equationsContainer.innerHTML = '';
+            dom.initialConditionsContainer.innerHTML = '';
+
+            stateVars.forEach(v => {
+                const eqDiv = document.createElement('div');
+                eqDiv.className = 'flex items-center gap-3';
+                const latexVar = `$$\\frac{d${toLatex(v)}}{dt} =$$`;
+                eqDiv.innerHTML = `
+                    <label for="eq-${v}" class="text-lg font-mono whitespace-nowrap">${latexVar}</label>
+                    <textarea id="eq-${v}" rows="1" class="w-full text-lg font-mono p-2 leading-tight">${defaultEquations[v] || ''}</textarea>
+                `;
+                dom.equationsContainer.appendChild(eqDiv);
+                
+                const icDiv = document.createElement('div');
+                const icLatexVar = `$$${toLatex(v)}_0$$`;
+                icDiv.innerHTML = `
+                    <label for="ic-${v}" class="block text-sm font-medium text-gray-300">Condição Inicial ${icLatexVar}</label>
+                    <input type="number" id="ic-${v}" value="${v === 'theta' ? 0.2 : 0}" step="0.1" class="w-full mt-1">
+                `;
+                dom.initialConditionsContainer.appendChild(icDiv);
+            });
+            
+            MathJax.typesetPromise([dom.equationsContainer, dom.initialConditionsContainer]);
+        }
+        
+        function rebuildInputsUI() {
+            const inputs = dom.inputsListInput.value.split(',').map(s => s.trim()).filter(Boolean);
+            dom.inputsContainer.innerHTML = '';
+
+            inputs.forEach(inputName => {
+                const container = document.createElement('div');
+                container.className = 'p-3 bg-gray-700/50 rounded-lg';
+                container.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-bold text-lg">${inputName}</label>
+                        <select id="select-type-${inputName}" data-input-name="${inputName}" class="text-sm">
+                            <option value="constant">Valor Constante</option>
+                            <option value="function">Função</option>
+                            <option value="profile">Perfil (Tabela)</option>
+                        </select>
+                    </div>
+                    <div id="editor-container-${inputName}"></div>
+                `;
+                dom.inputsContainer.appendChild(container);
+                const selector = document.getElementById(`select-type-${inputName}`);
+                
+                if (inputName === 'F_drive') {
+                    selector.value = 'function';
+                }
+
+                selector.addEventListener('change', () => switchInputEditor(inputName));
+                switchInputEditor(inputName);
+            });
+            parseParametersFromEquations();
+        }
+        
+        function switchInputEditor(inputName) {
+            const container = document.getElementById(`editor-container-${inputName}`);
+            const type = document.getElementById(`select-type-${inputName}`).value;
+            
+            if (type === 'constant') {
+                container.innerHTML = `<input type="number" id="input-val-${inputName}" class="w-full" value="1.2">`;
+            } else if (type === 'function') {
+                container.innerHTML = `<textarea id="input-func-${inputName}" class="w-full font-mono" rows="2" placeholder="Ex: sin(t) * omega">${inputName === 'F_drive' ? '1.2 * cos(w_drive * t)' : 'sin(t)'}</textarea>`;
+                document.getElementById(`input-func-${inputName}`).addEventListener('focusout', parseParametersFromEquations);
+            } else { // type === 'profile'
+                container.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div id="table-container-${inputName}" class="flex flex-col gap-1 pr-2 md:border-r border-gray-600">
+                            <div class="grid grid-cols-3 gap-1 text-xs text-center font-bold">
+                                <span>Tempo (s)</span>
+                                <span>Valor</span>
+                                <span>Ação</span>
+                            </div>
+                            <div id="profile-points-${inputName}"></div>
+                             <button id="add-point-${inputName}" class="text-sm bg-blue-600 hover:bg-blue-700 rounded p-1 mt-1">+</button>
+                        </div>
+                        <div id="profile-preview-${inputName}" class="min-h-[150px]"></div>
+                    </div>
+                `;
+                
+                const pointsContainer = document.getElementById(`profile-points-${inputName}`);
+                createProfilePointRow(pointsContainer, inputName, 0, 1.2);
+                createProfilePointRow(pointsContainer, inputName, parseFloat(dom.simTimeInput.value), 1.2);
+
+                document.getElementById(`add-point-${inputName}`).addEventListener('click', () => {
+                    createProfilePointRow(pointsContainer, inputName);
+                });
+                
+                setTimeout(() => updateProfile(inputName), 0);
+            }
+        }
+
+        function createProfilePointRow(container, inputName, time = '', value = '') {
+            const pointRow = document.createElement('div');
+            pointRow.className = 'grid grid-cols-3 gap-1 items-center point-row';
+            pointRow.innerHTML = `
+                <input type="number" class="table-input" value="${time}" placeholder="t">
+                <input type="number" class="table-input" value="${value}" placeholder="v">
+                <button class="text-red-500 hover:text-red-400 font-bold text-lg">&times;</button>
+            `;
+            container.appendChild(pointRow);
+            
+            pointRow.querySelector('button').addEventListener('click', () => {
+                pointRow.remove();
+                updateProfile(inputName);
+            });
+            
+            pointRow.querySelectorAll('input').forEach(input => {
+                input.addEventListener('change', () => updateProfile(inputName));
+            });
+        }
+        
+        function updateProfile(inputName) {
+            const { sortedPairs } = getProfileData(inputName);
+            const pointsContainer = document.getElementById(`profile-points-${inputName}`);
+            const previewDiv = document.getElementById(`profile-preview-${inputName}`);
+            
+            if (!pointsContainer || !previewDiv) return;
+
+            const currentPointsContainer = document.getElementById(`profile-points-${inputName}`);
+            currentPointsContainer.innerHTML = '';
+            sortedPairs.forEach(pair => {
+                createProfilePointRow(currentPointsContainer, inputName, pair.t, pair.v);
+            });
+
+
+            if (sortedPairs.length < 1) {
+                Plotly.purge(previewDiv);
+                return;
+            };
+
+            const trace = {
+                x: sortedPairs.map(p => p.t),
+                y: sortedPairs.map(p => p.v),
+                mode: 'lines+markers',
+                type: 'scatter',
+                line: { color: '#60a5fa', width: 2 },
+                marker: { color: '#60a5fa', size: 6 }
+            };
+            
+            const layout = {
+                title: `<b>Gráfico de ${inputName}</b>`,
+                xaxis: { title: 'Tempo (s)', color: '#f3f4f6', gridcolor: '#4b5563' },
+                yaxis: { title: 'Valor', color: '#f3f4f6', gridcolor: '#4b5563' },
+                paper_bgcolor: '#1f2937',
+                plot_bgcolor: '#1f2937',
+                font: { color: '#f3f4f6' },
+                showlegend: false,
+                margin: { l: 60, r: 25, b: 50, t: 50 },
+            };
+            
+            Plotly.newPlot(previewDiv, [trace], layout, {responsive: true, displayModeBar: false});
+        }
+
+        function getProfileData(inputName) {
+            const pointsContainer = document.getElementById(`profile-points-${inputName}`);
+            const pairs = [];
+            if (!pointsContainer) return { sortedPairs: pairs };
+
+            pointsContainer.querySelectorAll('.point-row').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                const timeStr = inputs[0].value;
+                const valueStr = inputs[1].value;
+
+                if(timeStr !== '' || valueStr !== '') {
+                   const time = parseFloat(timeStr);
+                   const value = parseFloat(valueStr);
+                   pairs.push({ t: isNaN(time) ? 0 : time, v: isNaN(value) ? 0 : value });
+                }
+            });
+
+            const sortedPairs = pairs.sort((a,b) => a.t - b.t);
+
+            return { sortedPairs };
+        }
+
+
+        function parseParametersFromEquations() {
+            const stateVars = dom.stateVarsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+            const inputs = dom.inputsListInput.value.split(',').map(s => s.trim()).filter(Boolean);
+            
+            let allEquationsStr = '';
+            stateVars.forEach(v => {
+                const eqTextarea = document.getElementById(`eq-${v}`);
+                if (eqTextarea) allEquationsStr += eqTextarea.value + ' ';
+            });
+            
+            inputs.forEach(inputName => {
+                const selector = document.getElementById(`select-type-${inputName}`);
+                if (selector && selector.value === 'function') {
+                    const funcTextarea = document.getElementById(`input-func-${inputName}`);
+                    if (funcTextarea) {
+                        allEquationsStr += funcTextarea.value + ' ';
+                    }
+                }
+            });
+
+            const oldValues = {};
+            dom.paramsContainer.querySelectorAll('input').forEach(input => {
+                oldValues[input.id.replace('param-', '')] = input.value;
+            });
+            dom.paramsContainer.innerHTML = '';
+
+            try {
+                const node = math.parse(allEquationsStr);
+                const symbols = new Set();
+                node.traverse(child => { if (child.isSymbolNode) symbols.add(child.name); });
+
+                const knownSymbols = [...stateVars, ...inputs, 't', ...Object.keys(math)];
+                const parameters = [...symbols].filter(s => !knownSymbols.includes(s));
+                generateParamUI(parameters, oldValues);
+            } catch (e) {
+                dom.paramsContainer.innerHTML = `<p class="text-red-400 col-span-full">Erro na sintaxe: ${e.message}</p>`;
+            }
+        }
+
+        function generateParamUI(parameters, oldValues = {}) {
+            const defaultValues = { 'g': 9.81, 'L': 1, 'b': 0.5, 'w_drive': 0.667 };
+            parameters.forEach(param => {
+                const div = document.createElement('div');
+                const prevValue = oldValues[param] || defaultValues[param] || 1;
+                div.innerHTML = `
+                    <label for="param-${param}" class="block text-sm font-medium text-gray-300">${param}</label>
+                    <input type="number" id="param-${param}" value="${prevValue}" class="w-full mt-1">
+                `;
+                dom.paramsContainer.appendChild(div);
+            });
+        }
+        
+        function getInterpolatedValue(t, profile) {
+            if (!profile || profile.length === 0) return 0;
+            if (t <= profile[0].t) return profile[0].v;
+            if (t >= profile[profile.length - 1].t) return profile[profile.length - 1].v;
+            
+            let p1, p2;
+            for (let i = 0; i < profile.length - 1; i++) {
+                if (t >= profile[i].t && t < profile[i+1].t) {
+                    p1 = profile[i];
+                    p2 = profile[i+1];
+                    break;
+                }
+            }
+            if (!p1) return profile[profile.length - 1].v;
+
+            const t_range = p2.t - p1.t;
+            if (t_range === 0) return p1.v;
+
+            const v_range = p2.v - p1.v;
+            const t_rel = (t - p1.t) / t_range;
+            return p1.v + t_rel * v_range;
+        }
+
+        // --- Função de Simulação ---
+        function runSimulation() {
+            try {
+                simulationData = null; // Limpa os resultados anteriores
+                dom.exportButton.classList.add('hidden'); // Esconde o botão de exportar
+                dom.plotsColumn.innerHTML = `<div class="text-center text-gray-400">Simulando...</div>`;
+
+                const stateVars = dom.stateVarsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+                const inputs = dom.inputsListInput.value.split(',').map(s => s.trim()).filter(Boolean);
+                const t_max = parseFloat(dom.simTimeInput.value);
+                const dt = parseFloat(dom.timeStepInput.value);
+
+                if (stateVars.length === 0) {
+                    throw new Error("Nenhuma variável de estado foi definida.");
+                }
+                 if (!isFinite(t_max) || !isFinite(dt) || dt <= 0) {
+                    throw new Error("Tempo de simulação ou passo de integração inválido.");
+                }
+
+                const compiledEqs = stateVars.map(v => math.compile(document.getElementById(`eq-${v}`).value));
+                const scope = {};
+                
+                document.querySelectorAll('#params-container input').forEach(input => {
+                    scope[input.id.replace('param-', '')] = parseFloat(input.value) || 0;
+                });
+                
+                const inputData = {};
+                inputs.forEach(inputName => {
+                    const type = document.getElementById(`select-type-${inputName}`).value;
+                    if (type === 'constant') {
+                        inputData[inputName] = { type: 'constant', value: parseFloat(document.getElementById(`input-val-${inputName}`).value) };
+                    } else if (type === 'function') {
+                        const funcStr = document.getElementById(`input-func-${inputName}`).value;
+                        inputData[inputName] = { type: 'function', func: math.compile(funcStr) };
+                    } else { // profile
+                        const { sortedPairs } = getProfileData(inputName);
+                        inputData[inputName] = { type: 'profile', profile: sortedPairs };
+                    }
+                });
+
+                let state = {};
+                stateVars.forEach(v => { state[v] = parseFloat(document.getElementById(`ic-${v}`).value); });
+
+                const history = stateVars.reduce((acc, v) => ({ ...acc, [v]: [] }), {});
+                const inputsHistory = inputs.reduce((acc, u) => ({ ...acc, [u]: [] }), {});
+                const t_data = [];
+
+                for (let t = 0; t <= t_max; t += dt) {
+                    t_data.push(t);
+                    stateVars.forEach(v => history[v].push(state[v]));
+                    
+                    const scope_t = { ...scope, ...state, t: t };
+
+                    inputs.forEach(inputName => {
+                        const inputDef = inputData[inputName];
+                        let value;
+                        if(inputDef.type === 'constant') {
+                            value = inputDef.value;
+                        } else if (inputDef.type === 'function') {
+                            value = inputDef.func.evaluate(scope_t);
+                        } else {
+                            value = getInterpolatedValue(t, inputDef.profile);
+                        }
+                        scope_t[inputName] = value;
+                        inputsHistory[inputName].push(value); // Armazena o valor da entrada
+                    });
+
+                    const derivatives = compiledEqs.map(eq => eq.evaluate(scope_t));
+
+                    const newState = { ...state };
+                    stateVars.forEach((v, i) => {
+                        const derivative = derivatives[i];
+                        if (!isFinite(derivative)) {
+                            throw new Error(`A derivada de '${v}' tornou-se não-finita (NaN ou Infinito) em t=${t.toFixed(2)}. Verifique suas equações e parâmetros.`);
+                        }
+                        newState[v] += derivative * dt;
+                    });
+                    state = newState;
+                }
+                
+                // Armazena todos os dados para exportação
+                simulationData = {
+                    time: t_data,
+                    states: history,
+                    inputs: inputsHistory,
+                    stateVars: stateVars,
+                    inputNames: inputs
+                };
+                
+                plotResults(simulationData);
+
+            } catch (e) {
+                simulationData = null; // Garante que dados de erro não sejam exportados
+                dom.exportButton.classList.add('hidden');
+                dom.plotsColumn.innerHTML = `<div class="text-red-400 text-center p-4 bg-red-900/20 rounded-lg">
+                    <h3 class="font-bold text-lg mb-2">Erro na Simulação</h3>
+                    <p class="font-mono text-sm">${e.message}</p>
+                </div>`;
+                console.error(e);
+            }
+        }
+        
+        // --- Função de Plotagem ---
+        function plotResults(data) {
+            dom.plotsColumn.innerHTML = ''; // Limpa a mensagem "Simulando..."
+            const { time: t_data, states: history, stateVars } = data;
+
+            if (!stateVars || stateVars.length === 0) return;
+
+            const colors = ['#60a5fa', '#34d399', '#f87171', '#fb923c', '#a78bfa', '#f472b6'];
+            const plotGrid = document.createElement('div');
+            plotGrid.className = 'grid grid-cols-1 gap-y-8';
+            dom.plotsColumn.appendChild(plotGrid);
+
+            const plotDivs = stateVars.map(() => {
+                const plotDiv = document.createElement('div');
+                plotDiv.className = 'w-full h-64';
+                plotGrid.appendChild(plotDiv);
+                return plotDiv;
+            });
+            
+            setTimeout(() => {
+                stateVars.forEach((v, i) => {
+                    const plotDiv = plotDivs[i];
+                    const trace = {
+                        x: t_data,
+                        y: history[v],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: v,
+                        line: { color: colors[i % colors.length], width: 2 }
+                    };
+                
+                    const layout = {
+                        title: `<b>Gráfico de ${v}</b>`,
+                        xaxis: { title: 'Tempo (s)', color: '#f3f4f6', gridcolor: '#4b5563' },
+                        yaxis: { title: v, color: '#f3f4f6', gridcolor: '#4b5563' },
+                        paper_bgcolor: '#1f2937',
+                        plot_bgcolor: '#1f2937',
+                        font: { color: '#f3f4f6' },
+                        showlegend: false,
+                        margin: { l: 60, r: 25, b: 50, t: 50 },
+                    };
+
+                    Plotly.newPlot(plotDiv, [trace], layout, { responsive: true, displaylogo: false });
+                });
+            }, 50);
+
+            dom.exportButton.classList.remove('hidden'); // Mostra o botão de exportar
+        }
+
+        // --- Função de Exportação para CSV ---
+        function exportToCSV() {
+            if (!simulationData) {
+                alert("Nenhum dado de simulação para exportar. Por favor, execute a simulação primeiro.");
+                return;
+            }
+
+            const { time, states, inputs, stateVars, inputNames } = simulationData;
+            
+            // Cria o cabeçalho com ponto e vírgula como separador
+            const headers = ['Tempo', ...stateVars, ...inputNames].join(';');
+            
+            const rows = time.map((t, i) => {
+                // Formata cada número para usar vírgula como separador decimal
+                const timeVal = String(t.toFixed(5)).replace('.', ',');
+                const stateVals = stateVars.map(name => String(states[name][i].toFixed(5)).replace('.', ','));
+                const inputVals = inputNames.map(name => String(inputs[name][i].toFixed(5)).replace('.', ','));
+                
+                return [timeVal, ...stateVals, ...inputVals].join(';');
+            });
+
+            // Junta cabeçalho e linhas
+            let csvContent = [headers, ...rows].join('\n');
+
+            // Adiciona o BOM (Byte Order Mark) para UTF-8, essencial para o Excel
+            const bom = "\uFEFF";
+            const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", "dados_simulacao.csv");
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+        }
+
+        // --- Event Listeners ---
+        dom.stateVarsInput.addEventListener('change', rebuildFullUI);
+        dom.inputsListInput.addEventListener('change', rebuildFullUI);
+        
+        dom.equationsContainer.addEventListener('focusout', e => { 
+            if (e.target.tagName === 'TEXTAREA') {
+                parseParametersFromEquations();
+            }
+        });
+        dom.simulateButton.addEventListener('click', runSimulation);
+        dom.exportButton.addEventListener('click', exportToCSV); // Listener para o novo botão
+        
+        dom.simTimeInput.addEventListener('change', () => {
+             // Redraw profile previews if they exist
+            dom.inputsListInput.value.split(',').map(s => s.trim()).filter(Boolean).forEach(inputName => {
+                if(document.getElementById(`profile-preview-${inputName}`)) {
+                    updateProfile(inputName);
+                }
+            });
+        });
+
+        // --- Inicialização ---
+        function initializeApp() {
+            rebuildFullUI();
+        }
+
+        window.onload = initializeApp;
+
+    </script>
+</body>
+</html>
